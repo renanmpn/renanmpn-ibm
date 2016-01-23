@@ -1,3 +1,8 @@
+---
+declared-services:
+  speech_to_text:
+    label: speech_to_text
+    plan: standard
 applications:
 - path: .
   memory: 256M
