@@ -3,6 +3,6 @@ applications:
   memory: 256M
   instances: 1
   domain: mybluemix.net
-  name: RenanMPN - Watson
-  host: renanmpn---watson
+  name: renanmpn-watson
+  host: renanmpn-watson
   disk_quota: 1024M

@@ -28,6 +28,7 @@ app.listen(appEnv.port, '0.0.0.0', function() {
   console.log("server starting on " + appEnv.url);
 });
 
+
 var bodyParser = require('body-parser')
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
@@ -42,89 +43,120 @@ var relationship_extraction = watson.relationship_extraction({
   version: 'v1-beta'
 });
 
-/*require the ibm_db module*/
-var ibmdb = require('ibm_db');
-
-var VCAP_SERVICES = {
-  "sqldb": [
-    {
-      "name": "SQL Database-8y",
-      "label": "sqldb",
-      "plan": "sqldb_free",
-      "credentials": {
-        "hostname": "75.126.155.153",
-        "password": "uZtWQy5Id2jp",
-        "port": 50000,
-        "host": "75.126.155.153",
-        "jdbcurl": "jdbc:db2://75.126.155.153:50000/SQLDB",
-        "uri": "db2://user13747:uZtWQy5Id2jp@75.126.155.153:50000/SQLDB",
-        "db": "SQLDB",
-        "username": "user13747"
-      }
-    }
-  ]
+var mongo = process.env.VCAP_SERVICES;
+var port = process.env.PORT || 3030;
+var conn_str = "";
+if (mongo) {
+  var env = JSON.parse(mongo);
+  if (env['mongodb-2.4']) {
+    mongo = env['mongodb-2.4'][0]['credentials'];
+    if (mongo.url) {
+      conn_str = mongo.url;
+    } else {
+      console.log("No mongo found");
+    }  
+  } else {
+    conn_str = 'mongodb://localhost:27017';
+  }
+} else {
+  conn_str = 'mongodb://localhost:27017';
 }
-var serviceName = 'SQLDB';
 
-function findKey(obj,lookup) {
-   for (var i in obj) {
-      if (typeof(obj[i])==="object") {
-         if (i.toUpperCase().indexOf(lookup) > -1) {
-            // Found the key
-            return i;
-         }
-         findKey(obj[i],lookup);
-      }
-   }
-   return -1;
-}
- if (VCAP_SERVICES) {
-      var env = VCAP_SERVICES;
-      var key = 0;
-   }
-   
-   var credentials = env.sqldb[0].credentials;
-   
-    var dsnString = "DRIVER={DB2};DATABASE=" + credentials.db + ";UID=" + credentials.username + ";PWD=" + credentials.password + ";HOSTNAME=" + credentials.hostname + ";port=" + credentials.port+ ";AUTHENTICATION=SERVER";
+var MongoClient = require('mongodb').MongoClient;
+var db; 
 
-
-
-      /*Connect to the database server
-      param 1: The DSN string which has the details of database name to connect to, user id, password, hostname, portnumber 
-      param 2: The Callback function to execute when connection attempt to the specified database is completed
-      API for the ibm_db package can be found here: https://www.npmjs.org/package/ibm_db
-      */
-   
-ibmdb.open(dsnString, function (err,conn) {
-  if (err) return console.log(err);
+MongoClient.connect(conn_str, function(err, database) {
+  if(err) throw err;
+  db = database;
   
-  conn.query('select 1 from sysibm.sysdummy1', function (err, data) {
-    if (err) console.log(err);
-    else console.log(data);
- 
-    conn.close(function () {
-      console.log('done');
-    });
-  });
-});
+}); 
 
 
 
-app.post('/extract', function(req, res) {
+app.get('/api/getMessages', function (req, res) {
+  if (db && db !== "null" && db !== "undefined") {
+    // list messages
+    db.collection('messages').find({}, { sort:[['_id', 'desc']]}, function(err, cursor) {
+      if (err) {
+        console.log(err.stack); 
+        
+        res.status(500).jsonp({error: 'mongodb message list failed.'});
+      } else {
+        cursor.toArray(function(err, items) {
+          if (err) {
+            console.log(err.stack); 
+            
+            res.status(500).jsonp({error: 'mongodb cursor to array failed.'});
+          } else {
+            
+            var diseases = new Array();
+            for(var item of items){
+                diseases.push({'message': item.message,'DISEASE':item.DISEASE});
+            }
+            res.status(200).jsonp({data: diseases});
+            
+          }
+        });
+      }
+    });     
+  } else {
     
-    relationship_extraction.extract({
-    text: req.body.text,
+    res.status(500).jsonp({error: 'No mongo found.'});
+  }
+});
+app.post('/api/insertMessage', function (req, res) {
+  var msg = req.body.message;
+  var arr;
+   relationship_extraction.extract({
+    text: msg,
     dataset: 'ie-en-news' },
     function (err, response) {
         if (err){
             console.log('error:', err);
-            res.status(500).jsonp({message: err});
+            arr = "Could not get the informations"
+            //res.status(500).jsonp({message: err});
         }
         else{
-            console.log(JSON.stringify(response.doc.entities.entity, null, 2));
-            res.status(200).jsonp({message: JSON.stringify(response.doc.entities.entity)});
+           console.log(JSON.stringify(response.doc.entities.entity, null, 2));
+            arr = new Array();
+            for(var x of response.doc.entities.entity){
+                if(x.type == "DISEASE"){
+                    console.log("Type: "+x.type+" Text"+x.mentref[0].text);
+                    arr.push(x.mentref[0].text);    
+                }
+                
+            }
         }
+        
+        var message = { 'message': msg, 'DISEASE': arr,'ts': new Date() };
+        if (db && db !== "null" && db !== "undefined") {
+            db.collection('messages').insert(message, {safe:true}, function(err){
+            if (err) { 
+                console.log(err.stack);
+                res.write('mongodb message insert failed');
+                res.end(); 
+            } else {
+                res.write('following messages has been inserted into database' + "\n" 
+                + JSON.stringify(msg));
+                res.end();
+            }
+            });    
+        } else {
+            res.write('No mongo found');
+            res.end();
+        }
+            
+            
+        
     });
+  
+    
+   
 });
+
+
+
+
+
 
 
