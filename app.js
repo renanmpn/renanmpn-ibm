@@ -150,7 +150,7 @@ app.post('/api/insertMessage', function (req, res) {
                 console.log(JSON.stringify(response.doc.entities.entity, null, 2));
                 arr = new Array();
                 for(var x of response.doc.entities.entity){
-                    if(x.type == "DISEASE"){
+                    if(x.type == "DISEASE" || x.type == "ORGAN"){
                         console.log("Type: "+x.type+" Text"+x.mentref[0].text);
                         arr.push(x.mentref[0].text);    
                     }
