@@ -1,8 +1,5 @@
 /*eslint-env node*/
 
-//------------------------------------------------------------------------------
-// node.js starter application for Bluemix
-//------------------------------------------------------------------------------
 
 // This application uses express as its web server
 // for more info, see: http://expressjs.com
@@ -84,6 +81,9 @@ var relationship_extraction = watson.relationship_extraction({
   version: 'v1-beta'
 });
 
+/**
+ * Get function that returns all messages in the Database
+ */
 app.get('/api/getMessages', function (req, res) {
     MongoClient.connect(conn_str, function(err, database) {
         if(err){
@@ -91,7 +91,7 @@ app.get('/api/getMessages', function (req, res) {
         }
         db = database;
         if (db && db !== "null" && db !== "undefined") {
-    // list messages
+            // list messages
             db.collection('messages').find({}, { sort:[['_id', 'desc']]}, function(err, cursor) {
             if (err) {
                 console.log(err.stack); 
@@ -123,6 +123,10 @@ app.get('/api/getMessages', function (req, res) {
         });
   
 });
+
+/**
+ * POST function that insert a new message in the database
+ */
 app.post('/api/insertMessage', function (req, res) {
     MongoClient.connect(conn_str, function(err, database) {
         if(err){
@@ -140,7 +144,7 @@ app.post('/api/insertMessage', function (req, res) {
             if (err){
                 console.log('error:', err);
                 arr = ["Could not get the informations"];
-                //res.status(500).jsonp({message: "error"+err});
+                
             }
             else{
                 console.log(JSON.stringify(response.doc.entities.entity, null, 2));
@@ -170,10 +174,7 @@ app.post('/api/insertMessage', function (req, res) {
             } else {
                 res.write('No mongo found');
                 res.end();
-            }
-        
-                
-        
+            }               
         });
     
   
