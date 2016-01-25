@@ -1,81 +1,130 @@
-/**
- * Copyright 2015 IBM Corp. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/*eslint-env node*/
 
-'use strict';
+//------------------------------------------------------------------------------
+// node.js starter application for Bluemix
+//------------------------------------------------------------------------------
 
-var express      = require('express'),
-    app          = express(),
-    cors         = require('cors'),
-    vcapServices = require('vcap_services'),
-    extend       = require('util')._extend,
-    watson       = require('watson-developer-cloud');
+// This application uses express as its web server
+// for more info, see: http://expressjs.com
+var express = require('express');
 
-// Bootstrap application settings
-require('./config/express')(app);
+// cfenv provides access to your Cloud Foundry environment
+// for more info, see: https://www.npmjs.com/package/cfenv
+var cfenv = require('cfenv');
 
+// create a new express server
+var app = express();
 
-app.use(cors());
+// serve the files out of ./public as our main files
+app.use(express.static(__dirname + '/public'));
 
-// Add headers
-app.use(function (req, res, next) {
+// get the app environment from Cloud Foundry
+var appEnv = cfenv.getAppEnv();
 
-    // Website you wish to allow to connect
-    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+// start server on the specified port and binding host
+app.listen(appEnv.port, '0.0.0.0', function() {
 
-    // Request methods you wish to allow
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-
-    // Request headers you wish to allow
-    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type');
-
-    // Set to true if you need the website to include cookies in the requests sent
-    // to the API (e.g. in case you use sessions)
-    res.setHeader('Access-Control-Allow-Credentials', true);
-
-    // Pass to next layer of middleware
-    next();
+	// print a message when the server starts listening
+  console.log("server starting on " + appEnv.url);
 });
 
-// For local development, replace username and password
-var config = extend({
-  version: 'v1',
-  url: "https://stream.watsonplatform.net/speech-to-text/api",
-  username: '<username>',
-  password: '<password>'
-}, vcapServices.getCredentials('speech_to_text'));
+var bodyParser = require('body-parser')
+app.use( bodyParser.json() );       // to support JSON-encoded bodies
+app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
+  extended: true
+}));
 
-var authService = watson.authorization(config);
+var watson = require('watson-developer-cloud');
 
-app.get('/', function(req, res) {
-  res.render('index', { ct: req._csrfToken });
+var relationship_extraction = watson.relationship_extraction({
+  username: '78d04483-93a2-4d25-8cc7-f284dba0206b',
+  password: 'rjAjJtihbzRg',
+  version: 'v1-beta'
 });
 
-// Get token using your credentials
-app.post('/api/token', function(req, res, next) {
-  authService.getToken({url: config.url}, function(err, token) {
-    if (err)
-      next(err);
-    else
-      res.send(token);
+/*require the ibm_db module*/
+var ibmdb = require('ibm_db');
+
+var VCAP_SERVICES = {
+  "sqldb": [
+    {
+      "name": "SQL Database-8y",
+      "label": "sqldb",
+      "plan": "sqldb_free",
+      "credentials": {
+        "hostname": "75.126.155.153",
+        "password": "uZtWQy5Id2jp",
+        "port": 50000,
+        "host": "75.126.155.153",
+        "jdbcurl": "jdbc:db2://75.126.155.153:50000/SQLDB",
+        "uri": "db2://user13747:uZtWQy5Id2jp@75.126.155.153:50000/SQLDB",
+        "db": "SQLDB",
+        "username": "user13747"
+      }
+    }
+  ]
+}
+var serviceName = 'SQLDB';
+
+function findKey(obj,lookup) {
+   for (var i in obj) {
+      if (typeof(obj[i])==="object") {
+         if (i.toUpperCase().indexOf(lookup) > -1) {
+            // Found the key
+            return i;
+         }
+         findKey(obj[i],lookup);
+      }
+   }
+   return -1;
+}
+ if (VCAP_SERVICES) {
+      var env = VCAP_SERVICES;
+      var key = 0;
+   }
+   
+   var credentials = env.sqldb[0].credentials;
+   
+    var dsnString = "DRIVER={DB2};DATABASE=" + credentials.db + ";UID=" + credentials.username + ";PWD=" + credentials.password + ";HOSTNAME=" + credentials.hostname + ";port=" + credentials.port+ ";AUTHENTICATION=SERVER";
+
+
+
+      /*Connect to the database server
+      param 1: The DSN string which has the details of database name to connect to, user id, password, hostname, portnumber 
+      param 2: The Callback function to execute when connection attempt to the specified database is completed
+      API for the ibm_db package can be found here: https://www.npmjs.org/package/ibm_db
+      */
+   
+ibmdb.open(dsnString, function (err,conn) {
+  if (err) return console.log(err);
+  
+  conn.query('select 1 from sysibm.sysdummy1', function (err, data) {
+    if (err) console.log(err);
+    else console.log(data);
+ 
+    conn.close(function () {
+      console.log('done');
+    });
   });
 });
 
-// error-handler settings
-require('./config/error-handler')(app);
 
-var port = process.env.VCAP_APP_PORT || 3000;
-app.listen(port);
-console.log('listening at:', port);
+
+app.post('/extract', function(req, res) {
+    
+    relationship_extraction.extract({
+    text: req.body.text,
+    dataset: 'ie-en-news' },
+    function (err, response) {
+        if (err){
+            console.log('error:', err);
+            res.status(500).jsonp({message: err});
+        }
+        else{
+            console.log(JSON.stringify(response.doc.entities.entity, null, 2));
+            res.status(200).jsonp({message: JSON.stringify(response.doc.entities.entity)});
+        }
+    });
+});
+
+
